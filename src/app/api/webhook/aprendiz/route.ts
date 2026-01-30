@@ -4,10 +4,12 @@ import {
   getFieldValue,
   getNumericValue,
   getUserName,
+  getUnitName,
   isChecklistAprendiz
 } from '@/lib/checklist-api';
 import { buscarLinhaPorNota, atualizarLinhaAprendiz, criarLinhaPendente } from '@/lib/google-sheets';
 import { sendTeamsAlert, sendTeamsAlertNotaPendente } from '@/lib/teams';
+import { addEvent } from '@/lib/events';
 
 interface WebhookBody {
   evaluationId: number;
@@ -36,6 +38,7 @@ export async function POST(request: NextRequest) {
 
     // Extrair dados
     const userName = getUserName(evaluation);
+    const loja = getUnitName(evaluation);
     const numeroNota = String(getFieldValue(evaluation, 'Número da Nota Fiscal') || '');
     const numeroLancamento = String(getFieldValue(evaluation, 'Número do Lançamento') || '');
     const valorAprendiz = getNumericValue(evaluation, 'Valor que Você Lançou');
@@ -84,8 +87,24 @@ export async function POST(request: NextRequest) {
             dataHoraAprendiz,
           });
           console.log('[Webhook Aprendiz] Alerta de nota pendente enviado ao Teams');
+
+          // Emitir evento para o frontend
+          addEvent(
+            'alerta',
+            'Nota Não Encontrada',
+            `Nota ${numeroNota} não existe na planilha`,
+            loja,
+            `Aprendiz: ${userName} | Valor: R$ ${valorAprendiz.toFixed(2)} | Alerta enviado ao Teams`
+          );
         } catch (teamsError) {
           console.error('[Webhook Aprendiz] Erro ao enviar alerta Teams:', teamsError);
+
+          addEvent(
+            'erro',
+            'Erro ao Alertar Teams',
+            `Falha ao enviar alerta de nota ${numeroNota}`,
+            loja
+          );
         }
 
         return NextResponse.json({
@@ -134,9 +153,34 @@ export async function POST(request: NextRequest) {
           fotoUrl: dadosEstoquista.fotoUrl,
         });
         console.log('[Webhook Aprendiz] Alerta enviado ao Teams');
+
+        // Emitir evento para o frontend
+        addEvent(
+          'alerta',
+          'Valores Diferentes',
+          `Nota ${numeroNota} - Diferença: R$ ${diferenca.toFixed(2)}`,
+          dadosEstoquista.loja,
+          `Estoquista: R$ ${dadosEstoquista.valorEstoquista.toFixed(2)} | Aprendiz: R$ ${valorAprendiz.toFixed(2)} | Alerta enviado ao Teams`
+        );
       } catch (teamsError) {
         console.error('[Webhook Aprendiz] Erro ao enviar alerta Teams:', teamsError);
+
+        addEvent(
+          'erro',
+          'Erro ao Alertar Teams',
+          `Falha ao enviar alerta de divergência`,
+          dadosEstoquista.loja
+        );
       }
+    } else {
+      // Validação bem-sucedida
+      addEvent(
+        'sucesso',
+        'Validação OK',
+        `Nota ${numeroNota} - Valores conferem`,
+        dadosEstoquista.loja,
+        `Estoquista: ${dadosEstoquista.estoquista} | Aprendiz: ${userName} | R$ ${valorAprendiz.toFixed(2)}`
+      );
     }
 
     return NextResponse.json({

@@ -9,6 +9,7 @@ import {
   isChecklistEstoquista
 } from '@/lib/checklist-api';
 import { criarLinhaEstoquista } from '@/lib/google-sheets';
+import { addEvent } from '@/lib/events';
 
 interface WebhookBody {
   evaluationId: number;
@@ -89,6 +90,15 @@ export async function POST(request: NextRequest) {
         evalIdEstoquista: evaluationId,
       });
 
+      // Emitir evento para o frontend
+      addEvent(
+        'sucesso',
+        'Nota Recebida',
+        `Nota ${numeroNota} - R$ ${valorTotal.toFixed(2)}`,
+        loja,
+        `Estoquista: ${userName} | Fornecedor: ${fornecedor}`
+      );
+
       return NextResponse.json({
         success: true,
         message: 'Dados do estoquista salvos na planilha',
@@ -102,6 +112,15 @@ export async function POST(request: NextRequest) {
       console.error(`[SHEETS] Nota: ${numeroNota}`);
       console.error('[SHEETS] Detalhes:', sheetsError);
       console.error('========================================');
+
+      // Emitir evento de erro
+      addEvent(
+        'erro',
+        'Erro ao Salvar',
+        `Falha ao salvar nota ${numeroNota}`,
+        loja,
+        sheetsError instanceof Error ? sheetsError.message : 'Erro desconhecido'
+      );
 
       return NextResponse.json(
         {
